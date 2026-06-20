@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scryfall EDH Explorer v5 - Édition Manuelle</title>
+    <link href="https://cdn.jsdelivr.net/npm/mana-font@latest/css/mana.min.css" rel="stylesheet">
+    <style>
+        /* --- THÈME INSPIRÉ DE SCRYFALL --- */
+        :root {
+            --bg-dark: #121015;
+            --bg-panel: #242229;
+            --bg-panel-hover: #34303d;
+            --text-main: #e8e8e8;
+            --text-muted: #a3a1a8;
+            --accent: #5e489c;
+            --accent-hover: #7b62c2;
+            --border: #3b3942;
+            --skeleton-bg: linear-gradient(90deg, #242229 25%, #34303d 50%, #242229 75%);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1, h2, h3 { color: #fff; text-align: center; }
+        
+        .container { width: 100%; max-width: 1200px; }
+        .step { display: none; width: 100%; animation: fadeIn 0.3s ease; }
+        .step.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Grilles génériques */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        /* Cartes d'options */
+        .option-card {
+            background: var(--bg-panel); border: 2px solid var(--border); border-radius: 8px;
+            padding: 15px; text-align: center; cursor: pointer; transition: all 0.2s;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        .option-card:hover { background: var(--bg-panel-hover); border-color: var(--text-muted); }
+        .option-card.selected { border-color: var(--accent); background: #2a2040; box-shadow: 0 0 10px rgba(94, 72, 156, 0.5); }
+        
+        .mana-icon-large { font-size: 3rem; margin-bottom: 10px; display: block; pointer-events: none; }
+        .option-card h3 { pointer-events: none; margin: 5px 0 0 0; }
+        
+        /* Commandeurs & Decks */
+        .commander-card { cursor: pointer; transition: transform 0.2s; }
+        .commander-card img { width: 100%; border-radius: 4.75%; box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
+        .commander-card:hover { transform: scale(1.05); }
+
+        .deck-card {
+            display: flex; background: var(--bg-panel); border: 1px solid var(--border);
+            border-radius: 8px; padding: 15px; margin-bottom: 15px; cursor: pointer; gap: 20px; align-items: center;
+        }
+        .deck-card:hover { border-color: var(--accent); background: var(--bg-panel-hover); }
+        .deck-card img { height: 100px; border-radius: 4.75%; }
+        .deck-stats { display: flex; gap: 15px; color: var(--text-muted); font-size: 0.9em; margin-top:5px; flex-wrap: wrap; }
+
+        /* Courbe de Mana (Histogramme) */
+        .mana-curve-container {
+            background: var(--bg-panel); padding: 20px; border-radius: 8px; border: 1px solid var(--border);
+            margin-bottom: 20px; text-align: center;
+        }
+        .mana-curve {
+            display: flex; justify-content: center; align-items: flex-end; gap: 15px; height: 150px;
+            margin-top: 15px; border-bottom: 1px solid var(--border); padding-bottom: 5px;
+        }
+        .curve-bar-col { display: flex; flex-direction: column; align-items: center; width: 40px; height: 100%; }
+        .curve-bar { background: var(--accent); width: 100%; border-radius: 4px 4px 0 0; transition: height 0.5s ease; min-height: 2px;}
+        .curve-label { font-size: 0.9em; color: var(--text-muted); margin-top: 5px;}
+        .curve-count { font-size: 0.8em; font-weight: bold; margin-bottom: 5px; min-height: 15px; }
+
+        /* Liste de Deck */
+        .deck-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .category { margin-bottom: 20px; }
+        .category-title { border-bottom: 1px solid var(--border); padding-bottom: 5px; margin-bottom: 10px; color: var(--text-main); font-weight: bold; }
+        .card-item {
+            display: flex; align-items: center; padding: 6px; cursor: pointer; border-radius: 4px;
+            justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .card-item:hover { background: rgba(255,255,255,0.1); }
+        .card-item-left { display: flex; align-items: center; }
+        .card-item img { width: 40px; height: 56px; border-radius: 3px; margin-right: 10px; }
+        
+        /* Tooltip Centré & Cliquable */
+        #tooltip-preview {
+            position: fixed; display: none; z-index: 1000; background: var(--bg-dark);
+            border: 1px solid var(--border); border-radius: 8px; padding: 15px;
+            width: 320px; box-shadow: 0 10px 50px rgba(0,0,0,0.9); 
+            top: 50%; left: 50%; transform: translate(-50%, -50%);
+            max-height: 85vh; overflow-y: auto;
+            pointer-events: auto;
+            cursor: pointer;
+        }
+        #tooltip-preview::-webkit-scrollbar { width: 8px; }
+        #tooltip-preview::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        #tooltip-preview img { width: 100%; border-radius: 4.75%; margin-bottom: 10px; transition: transform 0.3s ease; }
+        .oracle-box { background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; font-size: 0.85em; margin-top: 10px; line-height: 1.4; }
+        .close-hint { text-align: center; color: var(--text-muted); font-size: 0.8em; margin-top: 15px; font-style: italic; }
+
+        /* Background overlay */
+        #overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.7); z-index: 999; display: none; cursor: pointer;
+        }
+        
+        /* Utilitaires & Boutons */
+        .btn { background: var(--accent); color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 1em; }
+        .btn:hover { background: var(--accent-hover); }
+        .btn:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; }
+        .actions-bar { display: flex; justify-content: space-between; margin-bottom: 20px; width: 100%; gap: 10px; flex-wrap: wrap; }
+        
+        /* Skeleton Animation */
+        @keyframes skeleton-loading { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
+        .skeleton { background: var(--skeleton-bg); background-size: 200px 100%; animation: skeleton-loading 1.5s infinite linear; border-radius: 4px; }
+        .skeleton-card { width: 100%; height: 250px; border-radius: 8px; }
+        .skeleton-line { width: 100%; height: 16px; margin-bottom: 8px; }
+
+        /* Search Input */
+        .search-container { margin-bottom: 20px; width: 100%; }
+        .search-input { width: 100%; padding: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-panel); color: white; font-size: 1em; }
+
+        /* Simulator Styles */
+        .simulator-grid { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 20px; min-height: 150px; }
+        .sim-card { width: 110px; cursor: pointer; transition: transform 0.2s; }
+        .sim-card img { width: 100%; border-radius: 4.75%; box-shadow: 0 4px 8px rgba(0,0,0,0.4); }
+        .sim-card:hover { transform: scale(1.1) translateY(-10px); }
+
+        /* --- MODAL D'ÉDITION --- */
+        .modal {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.8); z-index: 1001; display: none;
+            justify-content: center; align-items: center; backdrop-filter: blur(3px);
+        }
+        .modal-content {
+            background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px;
+            padding: 20px; width: 90%; max-width: 600px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            display: flex; flex-direction: column; gap: 15px;
+        }
+        .modal-content h3 { margin: 0; text-align: left; }
+        .replace-actions { display: flex; gap: 10px; }
+        #replace-search-results {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 10px; max-height: 400px; overflow-y: auto; padding-right: 5px;
+        }
+        .search-result-card { cursor: pointer; transition: transform 0.2s; }
+        .search-result-card img { width: 100%; border-radius: 4.75%; }
+        .search-result-card:hover { transform: scale(1.05); border: 2px solid var(--accent); border-radius: 6%; }
+        #replace-search-results::-webkit-scrollbar { width: 8px; }
+        #replace-search-results::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+<div id="overlay" onclick="hideTooltip()"></div>
+
+<div id="tooltip-preview" onclick="hideTooltip()"></div>
+
+<div id="replace-modal" class="modal">
+    <div class="modal-content">
+        <h3>Remplacer : <span id="card-to-replace-name" style="color: var(--accent);"></span></h3>
+        <div class="replace-actions">
+            <input type="text" id="replace-search-input" class="search-input" placeholder="Nom de la nouvelle carte (ex: Sol Ring)..." onkeydown="if(event.key === 'Enter') searchReplacement()">
+            <button class="btn" onclick="searchReplacement()">Chercher</button>
+            <button class="btn" style="background: var(--bg-dark); border: 1px solid var(--border);" onclick="closeReplaceModal()">Annuler</button>
+        </div>
+        <div id="replace-search-results"></div>
+    </div>
+</div>
+
+<div class="container">
+    <div class="actions-bar">
+        <button id="btn-back" class="btn" style="visibility: hidden;" onclick="goBack()">← Retour</button>
+        <div id="deck-actions" style="display: none; gap: 10px;">
+            <button class="btn" onclick="openSimulator()">⚡ Main de départ</button>
+            <button class="btn" onclick="exportDeckList()">📋 Exporter (.txt)</button>
+        </div>
+    </div>
+
+    <div id="step-1" class="step active">
+        <h2>1. Choisissez l'identité de couleur (Multiples possibles)</h2>
+        <div class="grid" id="colors-grid"></div>
+        <div style="text-align: center; margin-top: 30px;">
+            <button id="btn-step1-next" class="btn" disabled onclick="setStep(2)">Valider les couleurs</button>
+        </div>
+    </div>
+
+    <div id="step-2" class="step">
+        <h2>2. Choisissez l'archétype</h2>
+        <div class="grid" id="archetypes-grid"></div>
+    </div>
+
+    <div id="step-3" class="step">
+        <h2>3. Top Commandeurs correspondants</h2>
+        <div id="loading-commanders" style="display:none;">
+            <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));">
+                <div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div>
+            </div>
+        </div>
+        <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));" id="commanders-grid"></div>
+    </div>
+
+    <div id="step-4" class="step">
+        <h2>4. Sélections de Decks & Orientations</h2>
+        <div id="decks-list"></div>
+    </div>
+
+    <div id="step-5" class="step">
+        <h2 id="deck-title">Nom du deck</h2>
+        
+        <div class="mana-curve-container" id="mana-curve-section" style="display: none;">
+            <h3>Courbe de Mana (Cartes hors terrains)</h3>
+            <div class="mana-curve" id="mana-curve-chart"></div>
+        </div>
+
+        <div class="search-container">
+            <input type="text" id="deck-filter" class="search-input" placeholder="🔍 Filtrer les cartes du deck par nom ou type..." oninput="filterDeckView()">
+        </div>
+
+        <div id="loading-deck" style="display: none;">
+            <div class="skeleton skeleton-line" style="width: 30%;"></div>
+            <div class="skeleton skeleton-line" style="height: 40px; margin-bottom: 15px;"></div>
+            <div class="skeleton skeleton-line" style="height: 40px; margin-bottom: 15px;"></div>
+            <div class="skeleton skeleton-line" style="height: 40px; margin-bottom: 15px;"></div>
+        </div>
+        <div class="deck-list" id="deck-categories"></div>
+    </div>
+
+    <div id="step-6" class="step">
+        <h2>⚡ Simulateur de main de départ</h2>
+        <p style="text-align: center; color: var(--text-muted);">Testez la variance de votre génération actuelle</p>
+        <div style="text-align: center; margin-bottom: 20px; display: flex; justify-content: center; gap: 10px;">
+            <button class="btn" onclick="drawMulligan()">Mulligan (Nouvelle main de 7)</button>
+            <button class="btn" id="btn-draw-card" onclick="drawOneCard()">Piocher une carte</button>
+        </div>
+        <div class="simulator-grid" id="simulator-hand"></div>
+    </div>
+</div>
+
+<script>
+    /* --- DONNÉES DE BASE --- */
+    const MTG_COLORS = [
+        { id: 'W', name: 'Blanc', icon: 'ms-w' },
+        { id: 'U', name: 'Bleu', icon: 'ms-u' },
+        { id: 'B', name: 'Noir', icon: 'ms-b' },
+        { id: 'R', name: 'Rouge', icon: 'ms-r' },
+        { id: 'G', name: 'Vert', icon: 'ms-g' },
+        { id: 'C', name: 'Incolore', icon: 'ms-c' }
+    ];
+
+    const ARCHETYPES = [
+        { id: 'tokens', name: 'Jetons (Tokens)', query: 'o:token' },
+        { id: 'aristocrats', name: 'Aristocrates', query: '(o:sacrifice o:creature)' },
+        { id: 'aggro', name: 'Aggro / Combat', query: '(o:haste OR o:trample OR o:menace)' },
+        { id: 'spellslinger', name: 'Spellslinger', query: '(o:"instant or sorcery")' },
+        { id: 'artifacts', name: 'Artefacts', query: 'o:artifact' },
+        { id: 'graveyard', name: 'Cimetière', query: 'o:graveyard' }
+    ];
+
+    const LANDS_MAP = { 'W': 'Plains', 'U': 'Island', 'B': 'Swamp', 'R': 'Mountain', 'G': 'Forest' };
+
+    let state = { step: 1, colors: [], archetype: null, commander: null, deckCards: [], simDeck: [], activeFlav: null };
+
+    /* --- UTILITAIRES --- */
+    const delay = ms => new Promise(res => setTimeout(res, ms));
+
+    async function fetchScryfall(query, isUrl = false) {
+        const url = isUrl ? query : `https://api.scryfall.com/cards/search?q=${encodeURIComponent(query)}`;
+        
+        let cached = null;
+        try {
+            cached = localStorage.getItem(url);
+        } catch (e) {
+            console.warn("LocalStorage getItem bloqué (Shields Brave potentiellement actifs).", e);
+        }
+        
+        if (cached) return JSON.parse(cached);
+
+        await delay(60); 
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error("Aucun résultat");
+            const data = await response.json();
+            try { 
+                localStorage.setItem(url, JSON.stringify(data)); 
+            } catch (e) {
+                console.warn("LocalStorage setItem bloqué.", e);
+            }
+            return data;
+        } catch (error) { 
+            console.error(error);
+            return { data: [] }; 
+        }
+    }
+
+    function formatSymbology(text) {
+        if (!text) return '';
+        return text.replace(/{([^}]+)}/g, (match, p1) => {
+            let symbol = p1.toLowerCase().replace('/', '');
+            if (symbol === 't') symbol = 'tap';
+            if (symbol === 'q') symbol = 'untap';
+            return `<i class="ms ms-${symbol} ms-cost"></i>`;
+        });
+    }
+
+    /* --- NAVIGATION --- */
+    function setStep(stepNumber) {
+        document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+        document.getElementById(`step-${stepNumber}`).classList.add('active');
+        document.getElementById('btn-back').style.visibility = stepNumber > 1 ? 'visible' : 'hidden';
+        
+        document.getElementById('deck-actions').style.display = (stepNumber === 5) ? 'flex' : 'none';
+        
+        state.step = stepNumber;
+        if(stepNumber === 3) loadCommanders();
+    }
+    
+    function goBack() { 
+        if (state.step === 6) setStep(5);
+        else if (state.step > 1) setStep(state.step - 1); 
+    }
+
+    /* --- ÉTAPE 1: Couleurs --- */
+    function renderColors() {
+        const container = document.getElementById('colors-grid');
+        container.innerHTML = '';
+        MTG_COLORS.forEach(c => {
+            const div = document.createElement('div');
+            div.className = 'option-card';
+            div.dataset.color = c.id;
+            div.innerHTML = `<i class="ms ${c.icon} ms-cost mana-icon-large"></i><h3>${c.name}</h3>`;
+            
+            div.onclick = (e) => {
+                const targetCard = e.currentTarget;
+                const colorId = targetCard.dataset.color;
+
+                if (colorId === 'C') {
+                    state.colors = ['C'];
+                    document.querySelectorAll('#colors-grid .option-card').forEach(el => el.classList.remove('selected'));
+                    targetCard.classList.add('selected');
+                } else {
+                    if (state.colors.includes('C')) {
+                        state.colors = state.colors.filter(col => col !== 'C');
+                        const cardC = document.querySelector('[data-color="C"]');
+                        if (cardC) cardC.classList.remove('selected');
+                    }
+                    
+                    if (state.colors.includes(colorId)) {
+                        state.colors = state.colors.filter(col => col !== colorId);
+                        targetCard.classList.remove('selected');
+                    } else {
+                        state.colors.push(colorId);
+                        targetCard.classList.add('selected');
+                    }
+                }
+                document.getElementById('btn-step1-next').disabled = state.colors.length === 0;
+            };
+            container.appendChild(div);
+        });
+    }
+
+    /* --- ÉTAPE 2: Archétypes --- */
+    function renderArchetypes() {
+        const container = document.getElementById('archetypes-grid');
+        ARCHETYPES.forEach(a => {
+            const div = document.createElement('div');
+            div.className = 'option-card';
+            div.innerHTML = `<h3>${a.name}</h3>`;
+            div.onclick = () => { state.archetype = a; setStep(3); };
+            container.appendChild(div);
+        });
+    }
+
+    /* --- ÉTAPE 3: Commandeurs --- */
+    async function loadCommanders() {
+        const container = document.getElementById('commanders-grid');
+        const loader = document.getElementById('loading-commanders');
+        container.innerHTML = '';
+        loader.style.display = 'block';
+
+        const colorId = state.colors.join('');
+        const query = `is:commander id=${colorId} ${state.archetype.query} order:edhrec`;
+        
+        const result = await fetchScryfall(query);
+        const commanders = result.data.slice(0, 20);
+
+        loader.style.display = 'none';
+
+        if(commanders.length === 0) {
+            container.innerHTML = "<p>Aucun commandeur ne correspond à cette combinaison stricte. Revenez en arrière.</p>";
+            return;
+        }
+
+        commanders.forEach(cmd => {
+            const imgUrl = cmd.image_uris ? cmd.image_uris.normal : (cmd.card_faces ? cmd.card_faces[0].image_uris.normal : '');
+            if(!imgUrl) return;
+
+            const div = document.createElement('div');
+            div.className = 'commander-card';
+            div.innerHTML = `<img src="${imgUrl}" alt="${cmd.name}">`;
+            div.onclick = () => { state.commander = cmd; generateDecks(); };
+            container.appendChild(div);
+        });
+    }
+
+    /* --- ÉTAPE 4: Decks --- */
+    function generateDecks() {
+        setStep(4);
+        const container = document.getElementById('decks-list');
+        container.innerHTML = '';
+        const cmdImgUrl = state.commander.image_uris ? state.commander.image_uris.art_crop : (state.commander.card_faces ? state.commander.card_faces[0].image_uris.art_crop : '');
+        
+        const deckFlavors = [
+            { id: "opti", name: "Compétitif Optimisé", desc: "Coûts en mana réduits au maximum, sélection basée sur la puissance globale.", c_lands: 34, c_creatures: 22, c_instants: 12, c_sorceries: 7, c_other: 24 },
+            { id: "budget", name: "Budget Friendly (< 2.00$ / carte)", desc: "Exclut les cartes onéreuses pour privilégier des synergies hautement accessibles.", c_lands: 37, c_creatures: 26, c_instants: 9, c_sorceries: 6, c_other: 21 },
+            { id: "synergy", name: "Synergie Thématique Maximale", desc: "Focus absolu sur les déclencheurs de l'archétype choisi.", c_lands: 36, c_creatures: 28, c_instants: 8, c_sorceries: 5, c_other: 22 }
+        ];
+
+        deckFlavors.forEach(flavor => {
+            const div = document.createElement('div');
+            div.className = 'deck-card';
+            div.innerHTML = `
+                <img src="${cmdImgUrl}" alt="Commander Art">
+                <div>
+                    <h3 style="margin:0 0 5px 0; text-align: left;">${state.commander.name} - ${flavor.name}</h3>
+                    <p style="margin: 0 0 10px 0; font-size: 0.85em; color: var(--text-muted);">${flavor.desc}</p>
+                    <div class="deck-stats">
+                        <span><i class="ms ms-land"></i> ~${flavor.c_lands} Terrains</span>
+                        <span><i class="ms ms-creature"></i> ${flavor.c_creatures} Créatures</span>
+                        <span><i class="ms ms-instant"></i> ${flavor.c_instants} Éphémères</span>
+                        <span><i class="ms ms-sorcery"></i> ${flavor.c_sorceries} Rituels</span>
+                        <span><i class="ms ms-artifact"></i> ${flavor.c_other} Autres</span>
+                    </div>
+                </div>
+            `;
+            div.onclick = () => { state.activeFlav = flavor; loadDeckView(); };
+            container.appendChild(div);
+        });
+    }
+
+    /* --- ÉTAPE 5: Vue du Deck --- */
+    async function loadDeckView() {
+        setStep(5);
+        document.getElementById('deck-filter').value = '';
+        document.getElementById('deck-title').innerHTML = `${state.commander.name} <span style="font-size:0.6em; color:var(--text-muted);">${formatSymbology(state.commander.mana_cost || '')}</span>`;
+        
+        const loader = document.getElementById('loading-deck');
+        const listContainer = document.getElementById('deck-categories');
+        const curveSection = document.getElementById('mana-curve-section');
+        
+        loader.style.display = 'block';
+        listContainer.innerHTML = '';
+        curveSection.style.display = 'none';
+
+        const id = state.commander.color_identity.length > 0 ? state.commander.color_identity.join('') : 'c';
+        
+        let flavorFilter = '';
+        if (state.activeFlav.id === 'budget') flavorFilter = ' usd<2.00';
+        else if (state.activeFlav.id === 'opti') flavorFilter = ' cmc<=4 order:usd';
+
+        const queryTheme = `id<=${id} f:commander -t:basic (${state.archetype.query})${flavorFilter}`;
+        const queryGeneric = `id<=${id} f:commander -t:basic order:edhrec${flavorFilter}`;
+        
+        const basicLandsQuery = "e:tdm cn>=287 cn<=291";
+        const wastesQuery = "Wastes t:basic";
+
+        const [resultTheme, resultGeneric, resultLands, resultWastes] = await Promise.all([
+            fetchScryfall(queryTheme),
+            fetchScryfall(queryGeneric),
+            fetchScryfall(basicLandsQuery),
+            fetchScryfall(wastesQuery)
+        ]);
+
+        const poolTheme = resultTheme.data || [];
+        const poolGeneric = resultGeneric.data || [];
+        const poolLands = resultLands.data || [];
+        const wasteCardObj = (resultWastes.data && resultWastes.data.length > 0) ? resultWastes.data[0] : null;
+
+        loader.style.display = 'none';
+
+        function filterCategory(typeCheck, count) {
+            let selected = poolTheme.filter(c => c.type_line && typeCheck(c.type_line));
+            if (selected.length < count) {
+                const genericSelected = poolGeneric.filter(c => c.type_line && typeCheck(c.type_line) && !selected.some(s => s.id === c.id));
+                selected = selected.concat(genericSelected.slice(0, count - selected.length));
+            }
+            return selected.slice(0, count);
+        }
+
+        const creatures = filterCategory(tl => tl.includes('Creature') && !tl.includes('Land'), state.activeFlav.c_creatures);
+        const instants = filterCategory(tl => tl.includes('Instant'), state.activeFlav.c_instants);
+        const sorceries = filterCategory(tl => tl.includes('Sorcery'), state.activeFlav.c_sorceries);
+        const otherNonLands = filterCategory(tl => (tl.includes('Artifact') || tl.includes('Enchantment') || tl.includes('Planeswalker') || tl.includes('Kindred')) && !tl.includes('Creature') && !tl.includes('Land'), state.activeFlav.c_other);
+        
+        const nonBasicLandsCount = Math.min(12, state.activeFlav.c_lands);
+        const nonBasicLands = poolGeneric.filter(c => c.type_line && c.type_line.includes('Land') && !c.type_line.includes('Basic')).slice(0, nonBasicLandsCount);
+
+        let nonLandsPool = [].concat(creatures, instants, sorceries, otherNonLands);
+        
+        let devotion = {};
+        let totalSymbols = 0;
+        state.commander.color_identity.forEach(c => devotion[c] = 0);
+
+        nonLandsPool.forEach(card => {
+            const cost = card.mana_cost || (card.card_faces ? card.card_faces[0].mana_cost : '') || '';
+            state.commander.color_identity.forEach(color => {
+                const matches = (cost.match(new RegExp(color, 'gi')) || []).length;
+                devotion[color] += matches;
+                totalSymbols += matches;
+            });
+        });
+
+        const basicLandsMap = {};
+        poolLands.forEach(c => {
+            if (c.name.includes('Plains')) basicLandsMap['W'] = c;
+            if (c.name.includes('Island')) basicLandsMap['U'] = c;
+            if (c.name.includes('Swamp')) basicLandsMap['B'] = c;
+            if (c.name.includes('Mountain')) basicLandsMap['R'] = c;
+            if (c.name.includes('Forest')) basicLandsMap['G'] = c;
+        });
+
+        let basicLandsToAdds = [];
+        const remainingLandsCount = 99 - nonLandsPool.length - nonBasicLands.length;
+
+        if (state.commander.color_identity.length === 0 || totalSymbols === 0) {
+            if (wasteCardObj) {
+                let wClone = JSON.parse(JSON.stringify(wasteCardObj));
+                wClone.count = remainingLandsCount;
+                basicLandsToAdds.push(wClone);
+            } else {
+                basicLandsToAdds.push({ name: 'Wastes', count: remainingLandsCount, type_line: 'Basic Land' });
+            }
+        } else {
+            let addedCount = 0;
+            const identity = state.commander.color_identity;
+            identity.forEach((color, idx) => {
+                let share = Math.round((devotion[color] / totalSymbols) * remainingLandsCount);
+                if (idx === identity.length - 1) share = remainingLandsCount - addedCount;
+                addedCount += share;
+                if (share > 0) {
+                    if (basicLandsMap[color]) {
+                        let landClone = JSON.parse(JSON.stringify(basicLandsMap[color]));
+                        landClone.count = share;
+                        basicLandsToAdds.push(landClone);
+                    } else {
+                        basicLandsToAdds.push({ name: LANDS_MAP[color], count: share, type_line: 'Basic Land' });
+                    }
+                }
+            });
+        }
+
+        state.deckCards = [
+            { category: "Commandeur", cards: [state.commander] },
+            { category: "Créatures", cards: creatures },
+            { category: "Éphémères", cards: instants },
+            { category: "Rituels", cards: sorceries },
+            { category: "Artéfacts & Enchantements", cards: otherNonLands },
+            { category: "Terrains Utilitaires", cards: nonBasicLands },
+            { category: "Terrains de Base (Équilibrés à 100 cartes)", cards: basicLandsToAdds }
+        ];
+
+        state.simDeck = [];
+        state.deckCards.forEach(group => {
+            if(group.category === "Commandeur") return;
+            group.cards.forEach(c => {
+                const qty = c.count ? c.count : 1;
+                for(let i=0; i<qty; i++) state.simDeck.push(c);
+            });
+        });
+
+        renderDeckViewStructure();
+        renderManaCurve(nonLandsPool);
+        curveSection.style.display = 'block';
+    }
+
+    function renderDeckViewStructure() {
+        const listContainer = document.getElementById('deck-categories');
+        listContainer.innerHTML = '';
+
+        state.deckCards.forEach(group => {
+            if (group.cards.length === 0) return;
+            
+            const catDiv = document.createElement('div');
+            catDiv.className = 'category';
+            catDiv.dataset.catName = group.category;
+            
+            let displayCount = group.cards.reduce((acc, c) => acc + (c.count || 1), 0);
+            catDiv.innerHTML = `<div class="category-title">${group.category} (${displayCount})</div>`;
+            
+            group.cards.forEach(card => {
+                const imgSmall = card.image_uris ? card.image_uris.small : (card.card_faces ? card.card_faces[0].image_uris.small : '');
+                const item = document.createElement('div');
+                item.className = 'card-item';
+                item.dataset.cardName = card.name.toLowerCase();
+                item.dataset.cardType = card.type_line.toLowerCase();
+                
+                const qtyText = card.count ? `${card.count}x ` : '';
+                const safeName = card.name.replace(/'/g, "\\'"); // Sécurise les apostrophes pour le onclick
+                
+                item.innerHTML = `
+                    <div class="card-item-left">
+                        ${imgSmall ? `<img src="${imgSmall}" alt="${card.name}">` : `<div style="width:40px;height:56px;background:var(--border);margin-right:10px;border-radius:3px;"></div>`}
+                        <span>${qtyText}${card.name}</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap: 15px;">
+                        <span>${formatSymbology(card.mana_cost || (card.card_faces ? card.card_faces[0].mana_cost : ''))}</span>
+                        <button class="btn" style="padding: 4px 8px; font-size: 0.8em; background: transparent; border: 1px solid var(--border);" onclick="openReplaceModal(event, '${group.category}', '${safeName}')" title="Remplacer cette carte">🔄</button>
+                    </div>
+                `;
+                
+                if(card.image_uris || card.card_faces) {
+                    item.addEventListener('click', (e) => { e.stopPropagation(); showTooltip(card); });
+                }
+
+                catDiv.appendChild(item);
+            });
+            listContainer.appendChild(catDiv);
+        });
+    }
+
+    /* --- FILTRE UX DYNAMIQUE --- */
+    function filterDeckView() {
+        const value = document.getElementById('deck-filter').value.toLowerCase();
+        document.querySelectorAll('#deck-categories .card-item').forEach(item => {
+            const name = item.dataset.cardName;
+            const type = item.dataset.cardType;
+            if (name.includes(value) || type.includes(value)) {
+                item.style.display = 'flex';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+
+    /* --- COURBE DE MANA RÉORDONNÉE PAR ORDRE CROISSANT --- */
+    function renderManaCurve(cards) {
+        const curve = { '0': 0, '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, '6+': 0 };
+        let maxCount = 0;
+
+        cards.forEach(c => {
+            let cmc = Math.floor(c.cmc || 0);
+            if(cmc <= 0) curve['0']++;
+            else if(cmc >= 6) curve['6+']++;
+            else curve[cmc.toString()]++;
+        });
+
+        for (let key in curve) { if (curve[key] > maxCount) maxCount = curve[key]; }
+
+        const chart = document.getElementById('mana-curve-chart');
+        chart.innerHTML = '';
+
+        const orderedKeys = ['0', '1', '2', '3', '4', '5', '6+'];
+        orderedKeys.forEach(key => {
+            const count = curve[key];
+            const heightPercent = maxCount === 0 ? 0 : (count / maxCount) * 100;
+            
+            chart.innerHTML += `
+                <div class="curve-bar-col">
+                    <span class="curve-count">${count > 0 ? count : ''}</span>
+                    <div style="flex-grow: 1; width: 100%; display: flex; align-items: flex-end; background: rgba(255,255,255,0.05); border-radius: 4px 4px 0 0;">
+                        <div class="curve-bar" style="height: ${heightPercent}%;"></div>
+                    </div>
+                    <span class="curve-label">${key}</span>
+                </div>
+            `;
+        });
+    }
+
+    /* --- TOOLTIP DYNAMIQUE RECTO-VERSO --- */
+    const tooltip = document.getElementById('tooltip-preview');
+    const overlay = document.getElementById('overlay');
+    let currentActiveCardFaces = null;
+    let currentFaceIndex = 0;
+
+    function showTooltip(card) {
+        currentActiveCardFaces = card.card_faces && card.card_faces.length > 1 ? card.card_faces : null;
+        currentFaceIndex = 0;
+        renderTooltipContent(card);
+        overlay.style.display = 'block';
+        tooltip.style.display = 'block';
+    }
+
+    function renderTooltipContent(card) {
+        let title = card.name;
+        let cost = card.mana_cost || '';
+        let type = card.type_line;
+        let text = card.oracle_text || '';
+        let pt = (card.power && card.toughness) ? `${card.power}/${card.toughness}` : '';
+        let img = card.image_uris ? card.image_uris.normal : '';
+
+        if (currentActiveCardFaces) {
+            const face = currentActiveCardFaces[currentFaceIndex];
+            title = face.name;
+            cost = face.mana_cost || '';
+            type = face.type_line || card.type_line;
+            text = face.oracle_text || '';
+            pt = (face.power && face.toughness) ? `${face.power}/${face.toughness}` : '';
+            img = face.image_uris ? face.image_uris.normal : (card.image_uris ? card.image_uris.normal : '');
+        }
+
+        const formattedText = formatSymbology(text.replace(/\n/g, '<br>'));
+
+        tooltip.innerHTML = `
+            ${img ? `<img id="tooltip-img" src="${img}" alt="${title}">` : ''}
+            ${currentActiveCardFaces ? `<div style="text-align:center; margin-bottom:10px;"><button class="btn" style="padding:5px 10px; font-size:0.85em;" onclick="toggleCardFace(event)">🔄 Pivoter / Face Suivante</button></div>` : ''}
+            <div style="font-weight: bold; font-size: 1.1em; display:flex; justify-content: space-between;">
+                <span>${title}</span>
+                <span>${formatSymbology(cost)}</span>
+            </div>
+            <div style="color: var(--text-muted); font-size: 0.9em; margin-bottom: 5px;">${type}</div>
+            ${pt ? `<div style="text-align: right; font-weight: bold;">${pt}</div>` : ''}
+            ${formattedText ? `<div class="oracle-box">${formattedText}</div>` : ''}
+            <div class="close-hint">(Cliquez à côté pour fermer)</div>
+        `;
+    }
+
+    function toggleCardFace(event) {
+        event.stopPropagation();
+        if (!currentActiveCardFaces) return;
+        currentFaceIndex = currentFaceIndex === 0 ? 1 : 0;
+        const imgEl = document.getElementById('tooltip-img');
+        if (imgEl) imgEl.style.transform = 'rotateY(90deg)';
+        
+        setTimeout(() => {
+            renderTooltipContent({ name: state.commander.name });
+        }, 150);
+    }
+
+    function hideTooltip() {
+        overlay.style.display = 'none';
+        tooltip.style.display = 'none';
+    }
+
+    /* --- EXPORT STANDARD FORMAT --- */
+    function exportDeckList() {
+        let output = `// Commander\n1 ${state.commander.name}\n\n`;
+        state.deckCards.forEach(group => {
+            if(group.category === "Commandeur") return;
+            output += `// ${group.category}\n`;
+            group.cards.forEach(card => {
+                const qty = card.count ? card.count : 1;
+                output += `${qty} ${card.name}\n`;
+            });
+            output += `\n`;
+        });
+
+        const blob = new Blob([output], { type: "text/plain;charset=utf-8" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `EDH_${state.commander.name.replace(/\s+/g, '_')}.txt`;
+        link.click();
+    }
+
+    /* --- SIMULATEUR DE MAIN --- */
+    let currentHand = [];
+    let currentSimPool = [];
+
+    function openSimulator() {
+        setStep(6);
+        drawMulligan();
+    }
+
+    function drawMulligan() {
+        currentSimPool = [...state.simDeck];
+        
+        for (let i = currentSimPool.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [currentSimPool[i], currentSimPool[j]] = [currentSimPool[j], currentSimPool[i]];
+        }
+
+        currentHand = currentSimPool.splice(0, 7);
+        renderSimulatorHand();
+    }
+
+    function drawOneCard() {
+        if (currentSimPool.length === 0) {
+            alert("Plus de cartes dans la bibliothèque !");
+            return;
+        }
+        currentHand.push(currentSimPool.shift());
+        renderSimulatorHand();
+    }
+
+    function renderSimulatorHand() {
+        const container = document.getElementById('simulator-hand');
+        document.getElementById('btn-draw-card').disabled = currentSimPool.length === 0;
+        container.innerHTML = '';
+
+        currentHand.forEach((card, idx) => {
+            const div = document.createElement('div');
+            div.className = 'sim-card';
+            
+            let img = card.image_uris ? card.image_uris.normal : (card.card_faces ? card.card_faces[0].image_uris.normal : '');
+            
+            if (img) {
+                div.innerHTML = `<img src="${img}" alt="${card.name}">`;
+            } else {
+                div.innerHTML = `<div style="width:100%; height:150px; background:var(--bg-panel); border:1px solid var(--border); border-radius:5px; padding:10px; font-size:0.8em; font-weight:bold; display:flex; align-items:center; text-align:center;">${card.name}</div>`;
+            }
+
+            div.onclick = () => {
+                currentHand.splice(idx, 1);
+                renderSimulatorHand();
+            };
+
+            container.appendChild(div);
+        });
+    }
+
+    /* --- ÉDITION MANUELLE (REMPLACEMENT) --- */
+    let replaceContext = { category: null, oldCardName: null };
+
+    function openReplaceModal(event, category, cardName) {
+        event.stopPropagation(); // Empêche l'ouverture du tooltip d'aperçu
+        replaceContext = { category, oldCardName: cardName };
+        document.getElementById('card-to-replace-name').innerText = cardName;
+        document.getElementById('replace-search-input').value = '';
+        document.getElementById('replace-search-results').innerHTML = '';
+        document.getElementById('replace-modal').style.display = 'flex';
+        document.getElementById('replace-search-input').focus();
+    }
+
+    function closeReplaceModal() {
+        document.getElementById('replace-modal').style.display = 'none';
+    }
+
+    async function searchReplacement() {
+        const query = document.getElementById('replace-search-input').value.trim();
+        if(!query) return;
+        
+        const resultsContainer = document.getElementById('replace-search-results');
+        resultsContainer.innerHTML = '<p style="text-align:center; width:100%; color:var(--text-muted);">Recherche en cours...</p>';
+
+        // Requête Scryfall directe
+        const data = await fetchScryfall(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(query)}`, true);
+        
+        resultsContainer.innerHTML = '';
+        if(!data.data || data.data.length === 0) {
+            resultsContainer.innerHTML = '<p style="text-align:center; width:100%; color:var(--text-muted);">Aucune carte trouvée.</p>';
+            return;
+        }
+
+        // Afficher les 15 premiers résultats
+        data.data.slice(0, 15).forEach(card => {
+            const img = card.image_uris ? card.image_uris.normal : (card.card_faces ? card.card_faces[0].image_uris.normal : null);
+            if(!img) return;
+            
+            const div = document.createElement('div');
+            div.className = 'search-result-card';
+            div.innerHTML = `<img src="${img}" alt="${card.name}">`;
+            div.onclick = () => confirmReplacement(card);
+            resultsContainer.appendChild(div);
+        });
+    }
+
+    function confirmReplacement(newCard) {
+        // 1. Trouver la catégorie et la carte
+        const groupIndex = state.deckCards.findIndex(g => g.category === replaceContext.category);
+        if(groupIndex > -1) {
+            const group = state.deckCards[groupIndex];
+            const cardIndex = group.cards.findIndex(c => c.name === replaceContext.oldCardName);
+            
+            if(cardIndex > -1) {
+                let oldCount = group.cards[cardIndex].count || 1;
+                
+                // Si plusieurs exemplaires, on déduit 1 et on ajoute la nouvelle carte
+                if (oldCount > 1) {
+                    group.cards[cardIndex].count -= 1;
+                    newCard.count = 1;
+                    group.cards.push(newCard);
+                } else {
+                    // Sinon on remplace l'entrée
+                    newCard.count = 1;
+                    group.cards[cardIndex] = newCard;
+                }
+            }
+        }
+
+        // 2. Mettre à jour la file du simulateur
+        state.simDeck = [];
+        state.deckCards.forEach(group => {
+            if(group.category === "Commandeur") return;
+            group.cards.forEach(c => {
+                const qty = c.count ? c.count : 1;
+                for(let i=0; i<qty; i++) state.simDeck.push(c);
+            });
+        });
+
+        // 3. Fermer et rafraîchir l'interface
+        closeReplaceModal();
+        renderDeckViewStructure();
+        
+        // Rafraîchir la courbe de mana visuellement
+        let flatNonLands = [];
+        state.deckCards.forEach(group => {
+            if(group.category !== "Terrains Utilitaires" && group.category !== "Terrains de Base (Équilibrés à 100 cartes)" && group.category !== "Commandeur") {
+                group.cards.forEach(c => {
+                    for(let i=0; i<(c.count||1); i++) flatNonLands.push(c);
+                });
+            }
+        });
+        renderManaCurve(flatNonLands);
+    }
+
+    // Initialisation
+    renderColors();
+    renderArchetypes();
+</script>
+</body>
+</html>
