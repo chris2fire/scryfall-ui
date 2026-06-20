@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scryfall EDH Explorer v5 - Édition Manuelle</title>
+    <title>Scryfall EDH Explorer v5 - Édition Manuelle & Catégories</title>
+    <!-- Importation de la police d'icônes Magic The Gathering (Mana Font) -->
     <link href="https://cdn.jsdelivr.net/npm/mana-font@latest/css/mana.min.css" rel="stylesheet">
     <style>
         /* --- THÈME INSPIRÉ DE SCRYFALL --- */
@@ -168,10 +169,13 @@
 </head>
 <body>
 
+<!-- Overlay d'assombrissement -->
 <div id="overlay" onclick="hideTooltip()"></div>
 
+<!-- Tooltip Centré -->
 <div id="tooltip-preview" onclick="hideTooltip()"></div>
 
+<!-- Modal de Remplacement de Carte -->
 <div id="replace-modal" class="modal">
     <div class="modal-content">
         <h3>Remplacer : <span id="card-to-replace-name" style="color: var(--accent);"></span></h3>
@@ -193,6 +197,7 @@
         </div>
     </div>
 
+    <!-- Étape 1 : Couleurs -->
     <div id="step-1" class="step active">
         <h2>1. Choisissez l'identité de couleur (Multiples possibles)</h2>
         <div class="grid" id="colors-grid"></div>
@@ -201,11 +206,13 @@
         </div>
     </div>
 
+    <!-- Étape 2 : Archétypes -->
     <div id="step-2" class="step">
         <h2>2. Choisissez l'archétype</h2>
         <div class="grid" id="archetypes-grid"></div>
     </div>
 
+    <!-- Étape 3 : Commandeurs -->
     <div id="step-3" class="step">
         <h2>3. Top Commandeurs correspondants</h2>
         <div id="loading-commanders" style="display:none;">
@@ -216,19 +223,23 @@
         <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));" id="commanders-grid"></div>
     </div>
 
+    <!-- Étape 4 : Decks -->
     <div id="step-4" class="step">
         <h2>4. Sélections de Decks & Orientations</h2>
         <div id="decks-list"></div>
     </div>
 
+    <!-- Étape 5 : Vue du Deck -->
     <div id="step-5" class="step">
         <h2 id="deck-title">Nom du deck</h2>
         
+        <!-- Courbe de Mana -->
         <div class="mana-curve-container" id="mana-curve-section" style="display: none;">
             <h3>Courbe de Mana (Cartes hors terrains)</h3>
             <div class="mana-curve" id="mana-curve-chart"></div>
         </div>
 
+        <!-- Recherche et Filtre -->
         <div class="search-container">
             <input type="text" id="deck-filter" class="search-input" placeholder="🔍 Filtrer les cartes du deck par nom ou type..." oninput="filterDeckView()">
         </div>
@@ -242,6 +253,7 @@
         <div class="deck-list" id="deck-categories"></div>
     </div>
 
+    <!-- Étape 6 : Simulateur de Main -->
     <div id="step-6" class="step">
         <h2>⚡ Simulateur de main de départ</h2>
         <p style="text-align: center; color: var(--text-muted);">Testez la variance de votre génération actuelle</p>
@@ -287,7 +299,7 @@
         try {
             cached = localStorage.getItem(url);
         } catch (e) {
-            console.warn("LocalStorage getItem bloqué (Shields Brave potentiellement actifs).", e);
+            console.warn("LocalStorage getItem bloqué.", e);
         }
         
         if (cached) return JSON.parse(cached);
@@ -506,7 +518,21 @@
         const creatures = filterCategory(tl => tl.includes('Creature') && !tl.includes('Land'), state.activeFlav.c_creatures);
         const instants = filterCategory(tl => tl.includes('Instant'), state.activeFlav.c_instants);
         const sorceries = filterCategory(tl => tl.includes('Sorcery'), state.activeFlav.c_sorceries);
+        
+        // On récupère le bloc global des "autres" cartes comme avant...
         const otherNonLands = filterCategory(tl => (tl.includes('Artifact') || tl.includes('Enchantment') || tl.includes('Planeswalker') || tl.includes('Kindred')) && !tl.includes('Creature') && !tl.includes('Land'), state.activeFlav.c_other);
+        
+        // ... Puis on les trie proprement dans leurs catégories spécifiques
+        const artifacts = [];
+        const enchantments = [];
+        const planeswalkers = [];
+
+        otherNonLands.forEach(c => {
+            const tl = c.type_line;
+            if (tl.includes('Planeswalker')) planeswalkers.push(c);
+            else if (tl.includes('Enchantment')) enchantments.push(c);
+            else artifacts.push(c); // Artéfacts et cartes misc (ex: Kindred purs) vont ici par défaut
+        });
         
         const nonBasicLandsCount = Math.min(12, state.activeFlav.c_lands);
         const nonBasicLands = poolGeneric.filter(c => c.type_line && c.type_line.includes('Land') && !c.type_line.includes('Basic')).slice(0, nonBasicLandsCount);
@@ -565,14 +591,17 @@
             });
         }
 
+        // --- NOUVELLE STRUCTURE DE DONNÉES AVEC CATÉGORIES SÉPARÉES ---
         state.deckCards = [
             { category: "Commandeur", cards: [state.commander] },
+            { category: "Planeswalkers", cards: planeswalkers },
             { category: "Créatures", cards: creatures },
             { category: "Éphémères", cards: instants },
             { category: "Rituels", cards: sorceries },
-            { category: "Artéfacts & Enchantements", cards: otherNonLands },
+            { category: "Artéfacts", cards: artifacts },
+            { category: "Enchantements", cards: enchantments },
             { category: "Terrains Utilitaires", cards: nonBasicLands },
-            { category: "Terrains de Base (Équilibrés à 100 cartes)", cards: basicLandsToAdds }
+            { category: "Terrains de Base", cards: basicLandsToAdds } // (Renommé pour être plus court)
         ];
 
         state.simDeck = [];
@@ -906,10 +935,10 @@
         closeReplaceModal();
         renderDeckViewStructure();
         
-        // Rafraîchir la courbe de mana visuellement
+        // Rafraîchir la courbe de mana visuellement (les nouvelles catégories sont prises en compte automatiquement)
         let flatNonLands = [];
         state.deckCards.forEach(group => {
-            if(group.category !== "Terrains Utilitaires" && group.category !== "Terrains de Base (Équilibrés à 100 cartes)" && group.category !== "Commandeur") {
+            if(group.category !== "Terrains Utilitaires" && group.category !== "Terrains de Base" && group.category !== "Commandeur") {
                 group.cards.forEach(c => {
                     for(let i=0; i<(c.count||1); i++) flatNonLands.push(c);
                 });
