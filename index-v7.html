@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scryfall EDH Explorer v5 - Édition Manuelle & Catégories</title>
+    <title>Scryfall EDH Explorer v6 - Tri Avancé</title>
     <!-- Importation de la police d'icônes Magic The Gathering (Mana Font) -->
     <link href="https://cdn.jsdelivr.net/npm/mana-font@latest/css/mana.min.css" rel="stylesheet">
     <style>
@@ -135,7 +135,8 @@
 
         /* Search Input */
         .search-container { margin-bottom: 20px; width: 100%; }
-        .search-input { width: 100%; padding: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-panel); color: white; font-size: 1em; }
+        .search-input { width: 100%; padding: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-panel); color: white; font-size: 1em; outline: none; }
+        .search-input:focus { border-color: var(--accent); }
 
         /* Simulator Styles */
         .simulator-grid { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 20px; min-height: 150px; }
@@ -239,9 +240,17 @@
             <div class="mana-curve" id="mana-curve-chart"></div>
         </div>
 
-        <!-- Recherche et Filtre -->
-        <div class="search-container">
-            <input type="text" id="deck-filter" class="search-input" placeholder="🔍 Filtrer les cartes du deck par nom ou type..." oninput="filterDeckView()">
+        <!-- Recherche et Filtres Dynamiques -->
+        <div class="search-container" style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <input type="text" id="deck-filter" class="search-input" style="flex: 1; min-width: 200px;" placeholder="🔍 Filtrer les cartes du deck par nom ou type..." oninput="filterDeckView()">
+            <select id="deck-sort" class="search-input" style="flex: 0 0 auto; width: auto; cursor: pointer;" onchange="changeSortMode(this.value)">
+                <option value="category">Trier par Catégorie</option>
+                <option value="cmc_asc">Coût de mana (Croissant)</option>
+                <option value="cmc_desc">Coût de mana (Décroissant)</option>
+                <option value="price_desc">Prix (Décroissant)</option>
+                <option value="price_asc">Prix (Croissant)</option>
+                <option value="alpha_asc">Ordre alphabétique</option>
+            </select>
         </div>
 
         <div id="loading-deck" style="display: none;">
@@ -287,7 +296,7 @@
 
     const LANDS_MAP = { 'W': 'Plains', 'U': 'Island', 'B': 'Swamp', 'R': 'Mountain', 'G': 'Forest' };
 
-    let state = { step: 1, colors: [], archetype: null, commander: null, deckCards: [], simDeck: [], activeFlav: null };
+    let state = { step: 1, colors: [], archetype: null, commander: null, deckCards: [], simDeck: [], activeFlav: null, sortBy: 'category' };
 
     /* --- UTILITAIRES --- */
     const delay = ms => new Promise(res => setTimeout(res, ms));
@@ -470,6 +479,9 @@
     async function loadDeckView() {
         setStep(5);
         document.getElementById('deck-filter').value = '';
+        document.getElementById('deck-sort').value = 'category';
+        state.sortBy = 'category';
+        
         document.getElementById('deck-title').innerHTML = `${state.commander.name} <span style="font-size:0.6em; color:var(--text-muted);">${formatSymbology(state.commander.mana_cost || '')}</span>`;
         
         const loader = document.getElementById('loading-deck');
@@ -519,10 +531,8 @@
         const instants = filterCategory(tl => tl.includes('Instant'), state.activeFlav.c_instants);
         const sorceries = filterCategory(tl => tl.includes('Sorcery'), state.activeFlav.c_sorceries);
         
-        // On récupère le bloc global des "autres" cartes comme avant...
         const otherNonLands = filterCategory(tl => (tl.includes('Artifact') || tl.includes('Enchantment') || tl.includes('Planeswalker') || tl.includes('Kindred')) && !tl.includes('Creature') && !tl.includes('Land'), state.activeFlav.c_other);
         
-        // ... Puis on les trie proprement dans leurs catégories spécifiques
         const artifacts = [];
         const enchantments = [];
         const planeswalkers = [];
@@ -531,7 +541,7 @@
             const tl = c.type_line;
             if (tl.includes('Planeswalker')) planeswalkers.push(c);
             else if (tl.includes('Enchantment')) enchantments.push(c);
-            else artifacts.push(c); // Artéfacts et cartes misc (ex: Kindred purs) vont ici par défaut
+            else artifacts.push(c);
         });
         
         const nonBasicLandsCount = Math.min(12, state.activeFlav.c_lands);
@@ -591,7 +601,6 @@
             });
         }
 
-        // --- NOUVELLE STRUCTURE DE DONNÉES AVEC CATÉGORIES SÉPARÉES ---
         state.deckCards = [
             { category: "Commandeur", cards: [state.commander] },
             { category: "Planeswalkers", cards: planeswalkers },
@@ -601,7 +610,7 @@
             { category: "Artéfacts", cards: artifacts },
             { category: "Enchantements", cards: enchantments },
             { category: "Terrains Utilitaires", cards: nonBasicLands },
-            { category: "Terrains de Base", cards: basicLandsToAdds } // (Renommé pour être plus court)
+            { category: "Terrains de Base", cards: basicLandsToAdds }
         ];
 
         state.simDeck = [];
@@ -618,12 +627,56 @@
         curveSection.style.display = 'block';
     }
 
+    /* --- FONCTIONS DE TRI --- */
+    function changeSortMode(mode) {
+        state.sortBy = mode;
+        renderDeckViewStructure();
+        filterDeckView();
+    }
+
     function renderDeckViewStructure() {
         const listContainer = document.getElementById('deck-categories');
         listContainer.innerHTML = '';
 
-        state.deckCards.forEach(group => {
-            if (group.cards.length === 0) return;
+        let groupsToRender = [];
+
+        // Logique de tri dynamique
+        if (state.sortBy === 'category') {
+            groupsToRender = state.deckCards;
+        } else {
+            const commanderGroup = state.deckCards.find(g => g.category === "Commandeur");
+            let otherCards = [];
+            
+            // Aplatir toutes les autres cartes tout en se souvenant de leur catégorie originale (pour l'édition)
+            state.deckCards.forEach(g => {
+                if (g.category !== "Commandeur") {
+                    g.cards.forEach(c => {
+                        if (!c._origCategory) c._origCategory = g.category;
+                        otherCards.push(c);
+                    });
+                }
+            });
+
+            // Tri du grand tableau aplati
+            otherCards.sort((a, b) => {
+                if (state.sortBy === 'cmc_asc') return (a.cmc || 0) - (b.cmc || 0);
+                if (state.sortBy === 'cmc_desc') return (b.cmc || 0) - (a.cmc || 0);
+                if (state.sortBy === 'price_asc') return parseFloat(a.prices?.usd || 0) - parseFloat(b.prices?.usd || 0);
+                if (state.sortBy === 'price_desc') return parseFloat(b.prices?.usd || 0) - parseFloat(a.prices?.usd || 0);
+                if (state.sortBy === 'alpha_asc') return a.name.localeCompare(b.name);
+                return 0;
+            });
+
+            if (commanderGroup) {
+                commanderGroup.cards.forEach(c => c._origCategory = "Commandeur");
+                groupsToRender.push(commanderGroup);
+            }
+            groupsToRender.push({ category: "Toutes les cartes (Triées)", cards: otherCards });
+        }
+
+        // Affichage des blocs calculés
+        groupsToRender.forEach(group => {
+            if (!group || group.cards.length === 0) return;
             
             const catDiv = document.createElement('div');
             catDiv.className = 'category';
@@ -640,16 +693,23 @@
                 item.dataset.cardType = card.type_line.toLowerCase();
                 
                 const qtyText = card.count ? `${card.count}x ` : '';
-                const safeName = card.name.replace(/'/g, "\\'"); // Sécurise les apostrophes pour le onclick
+                const safeName = card.name.replace(/'/g, "\\'");
                 
+                // La catégorie originale pour la modale de remplacement
+                const actualCategory = card._origCategory || group.category;
+                
+                // Badge de prix visible uniquement lors du tri par prix
+                const priceBadge = (state.sortBy.includes('price') && card.prices?.usd) ? `<span style="font-size:0.85em; color:var(--text-muted); margin-right:10px; background:rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px;">${card.prices.usd}$</span>` : '';
+
                 item.innerHTML = `
                     <div class="card-item-left">
                         ${imgSmall ? `<img src="${imgSmall}" alt="${card.name}">` : `<div style="width:40px;height:56px;background:var(--border);margin-right:10px;border-radius:3px;"></div>`}
                         <span>${qtyText}${card.name}</span>
                     </div>
                     <div style="display:flex; align-items:center; gap: 15px;">
+                        ${priceBadge}
                         <span>${formatSymbology(card.mana_cost || (card.card_faces ? card.card_faces[0].mana_cost : ''))}</span>
-                        <button class="btn" style="padding: 4px 8px; font-size: 0.8em; background: transparent; border: 1px solid var(--border);" onclick="openReplaceModal(event, '${group.category}', '${safeName}')" title="Remplacer cette carte">🔄</button>
+                        <button class="btn" style="padding: 4px 8px; font-size: 0.8em; background: transparent; border: 1px solid var(--border);" onclick="openReplaceModal(event, '${actualCategory}', '${safeName}')" title="Remplacer cette carte">🔄</button>
                     </div>
                 `;
                 
@@ -912,10 +972,13 @@
                 if (oldCount > 1) {
                     group.cards[cardIndex].count -= 1;
                     newCard.count = 1;
+                    // Injecte la catégorie d'origine pour éviter les bugs si remplacé pendant un tri
+                    newCard._origCategory = replaceContext.category;
                     group.cards.push(newCard);
                 } else {
                     // Sinon on remplace l'entrée
                     newCard.count = 1;
+                    newCard._origCategory = replaceContext.category;
                     group.cards[cardIndex] = newCard;
                 }
             }
@@ -935,7 +998,7 @@
         closeReplaceModal();
         renderDeckViewStructure();
         
-        // Rafraîchir la courbe de mana visuellement (les nouvelles catégories sont prises en compte automatiquement)
+        // Rafraîchir la courbe de mana visuellement
         let flatNonLands = [];
         state.deckCards.forEach(group => {
             if(group.category !== "Terrains Utilitaires" && group.category !== "Terrains de Base" && group.category !== "Commandeur") {
