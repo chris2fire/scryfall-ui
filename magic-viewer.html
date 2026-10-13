@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Magic: The Gathering - Liste & Galerie</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --surface-color: #1e1e1e;
+            --primary-color: #bb86fc;
+            --text-color: #e0e0e0;
+            --text-muted: #a0a0a0;
+            --border-radius: 8px;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #fff;
+        }
+
+        .form-container {
+            max-width: 800px;
+            margin: 0 auto 30px auto;
+            background: var(--surface-color);
+            padding: 20px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        textarea {
+            width: 100%;
+            height: 150px;
+            background: #2c2c2c;
+            color: #fff;
+            border: 1px solid #444;
+            padding: 10px;
+            border-radius: var(--border-radius);
+            box-sizing: border-box;
+            font-size: 14px;
+            resize: vertical;
+            font-family: monospace;
+        }
+
+        button {
+            background: var(--primary-color);
+            color: #121212;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            margin-top: 15px;
+            width: 100%;
+            transition: opacity 0.2s;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+            color: #aaa;
+        }
+
+        .status {
+            text-align: center;
+            margin-top: 15px;
+            font-size: 14px;
+            color: var(--text-muted);
+            white-space: pre-wrap;
+        }
+
+        /* Grille Scryfall-like */
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .card-wrapper {
+            position: relative;
+            cursor: pointer;
+            transition: transform 0.2s ease-in-out;
+        }
+
+        .card-wrapper:hover {
+            transform: scale(1.05);
+            z-index: 10;
+        }
+
+        .card-image {
+            width: 100%;
+            border-radius: 4.75% / 3.5%; /* Ratio exact des cartes MTG */
+            display: block;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+            background: #000;
+        }
+
+        .quantity-badge {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background: var(--primary-color);
+            color: #121212;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            z-index: 2;
+        }
+
+        /* Fenêtre Modale (Détails ergonomiques) */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 1000;
+        }
+
+        .modal-overlay.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal-content {
+            background: var(--surface-color);
+            width: 90%;
+            max-width: 900px;
+            max-height: 90vh;
+            border-radius: var(--border-radius);
+            padding: 30px;
+            display: flex;
+            gap: 30px;
+            box-sizing: border-box;
+            position: relative;
+            overflow-y: auto;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            font-size: 28px;
+            color: var(--text-muted);
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        .modal-close:hover {
+            color: #fff;
+        }
+
+        .modal-left {
+            flex: 0 0 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .modal-left img {
+            width: 100%;
+            border-radius: 4.75% / 3.5%;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+        }
+
+        .modal-right {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .card-details-block {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: var(--border-radius);
+        }
+
+        .card-title {
+            margin: 0 0 5px 0;
+            font-size: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-type {
+            font-weight: bold;
+            color: var(--text-muted);
+            border-bottom: 1px solid #444;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+        }
+
+        .card-oracle {
+            white-space: pre-wrap;
+            line-height: 1.5;
+        }
+
+        .mana-symbol {
+            background: #ddd;
+            color: #000;
+            border-radius: 50%;
+            padding: 2px 6px;
+            font-size: 12px;
+            font-weight: bold;
+            margin: 0 2px;
+            display: inline-block;
+        }
+
+        .card-flavor {
+            font-style: italic;
+            color: var(--text-muted);
+            margin-top: 10px;
+        }
+
+        @media (max-width: 768px) {
+            .modal-content {
+                flex-direction: column;
+                padding: 20px;
+            }
+            .modal-left {
+                flex: 1;
+                max-width: 300px;
+                margin: 0 auto;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>MTG - Afficheur de Liste (Vue Scryfall)</h1>
+    
+    <div class="form-container">
+        <p>Collez votre liste de cartes ci-dessous. Les formats type "Cardmarket" ou classiques sont supportés.</p>
+        <textarea id="listInput" placeholder="Exemples :&#10;1x Steal the Show (Secrets of Strixhaven) - R - English - NM 0,40 EUR&#10;4 Black Lotus"></textarea>
+        <button id="fetchBtn">Générer la galerie</button>
+        <div id="status" class="status"></div>
+    </div>
+
+    <div class="gallery" id="gallery"></div>
+
+    <!-- Modale d'affichage détaillé de la carte -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal-content">
+            <span class="modal-close" id="modalClose">&times;</span>
+            <div class="modal-left" id="modalLeft"></div>
+            <div class="modal-right" id="modalRight"></div>
+        </div>
+    </div>
+
+    <script>
+        const inputEl = document.getElementById('listInput');
+        const btnEl = document.getElementById('fetchBtn');
+        const statusEl = document.getElementById('status');
+        const galleryEl = document.getElementById('gallery');
+        
+        const modalOverlay = document.getElementById('modalOverlay');
+        const modalClose = document.getElementById('modalClose');
+        const modalLeft = document.getElementById('modalLeft');
+        const modalRight = document.getElementById('modalRight');
+
+        let cardsData = {}; 
+        let parsedList = [];
+
+        // Événements modale
+        modalClose.addEventListener('click', closeModal);
+        modalOverlay.addEventListener('click', (e) => {
+            if (e.target === modalOverlay) closeModal();
+        });
+
+        btnEl.addEventListener('click', processList);
+
+        function parseLine(line) {
+            line = line.trim();
+            if (!line) return null;
+            
+            // On capture "Quantité" (optionnel) + "Nom de la carte" en s'arrêtant avant la parenthèse du Set ou un tiret
+            const match = line.match(/^(\d+)[xX]?\s+(.+?)(?:\s+\(|\s+-\s+|$)/);
+            if (match) {
+                return {
+                    qty: parseInt(match[1], 10),
+                    name: match[2].trim()
+                };
+            }
+            
+            // Si aucune quantité n'est spécifiée en début de ligne
+            const matchNoQty = line.match(/^(.+?)(?:\s+\(|\s+-\s+|$)/);
+            if (matchNoQty) {
+                return { qty: 1, name: matchNoQty[1].trim() };
+            }
+            return { qty: 1, name: line };
+        }
+
+        async function processList() {
+            const text = inputEl.value;
+            const lines = text.split('\n');
+            parsedList = [];
+            cardsData = {};
+            
+            const nameMap = new Map();
+            
+            lines.forEach(line => {
+                const parsed = parseLine(line);
+                if (parsed) {
+                    const lowerName = parsed.name.toLowerCase();
+                    if (nameMap.has(lowerName)) {
+                        nameMap.get(lowerName).qty += parsed.qty;
+                    } else {
+                        nameMap.set(lowerName, { name: parsed.name, qty: parsed.qty });
+                    }
+                }
+            });
+            
+            parsedList = Array.from(nameMap.values());
+            
+            if (parsedList.length === 0) {
+                statusEl.textContent = "Aucune carte trouvée dans le champ texte.";
+                return;
+            }
+
+            btnEl.disabled = true;
+            galleryEl.innerHTML = '';
+            statusEl.textContent = `Interrogation de Scryfall pour ${parsedList.length} cartes uniques...`;
+            
+            const notFound = [];
+            let fetchedCount = 0;
+            
+            // L'API Scryfall accepte max 75 identifiants par requête
+            const CHUNK_SIZE = 75;
+            for (let i = 0; i < parsedList.length; i += CHUNK_SIZE) {
+                const chunk = parsedList.slice(i, i + CHUNK_SIZE);
+                
+                try {
+                    const response = await fetch('https://api.scryfall.com/cards/collection', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            identifiers: chunk.map(c => ({ name: c.name }))
+                        })
+                    });
+                    
+                    const json = await response.json();
+                    
+                    if (json.data) {
+                        json.data.forEach(card => {
+                            // On stocke la carte via son nom exact en minuscules (et on gère les cartes double face)
+                            const lowerFull = card.name.toLowerCase();
+                            cardsData[lowerFull] = card;
+                            
+                            // Associer également la face avant seule si c'est une carte double face
+                            const parts = lowerFull.split(' // ');
+                            parts.forEach(p => {
+                                cardsData[p.trim()] = card;
+                            });
+                        });
+                        fetchedCount += json.data.length;
+                    }
+                    if (json.not_found) {
+                        json.not_found.forEach(nf => notFound.push(nf.name));
+                    }
+                    
+                    // Courte pause par précaution pour le rate limit de Scryfall (10 requêtes / s)
+                    await new Promise(r => setTimeout(r, 100));
+                } catch (err) {
+                    console.error("Erreur API :", err);
+                }
+            }
+            
+            let statusText = `Terminé. ${fetchedCount} cartes récupérées avec succès.`;
+            if (notFound.length > 0) {
+                statusText += `\nNon trouvées (${notFound.length}) : ${notFound.join(', ')}`;
+            }
+            statusEl.textContent = statusText;
+            btnEl.disabled = false;
+            
+            renderGallery();
+        }
+
+        function renderGallery() {
+            parsedList.forEach(item => {
+                const card = cardsData[item.name.toLowerCase()];
+                if (!card) return; // Ignore si carte non trouvée
+
+                let imgUrl = '';
+                if (card.image_uris && card.image_uris.normal) {
+                    imgUrl = card.image_uris.normal;
+                } else if (card.card_faces && card.card_faces[0].image_uris) {
+                    imgUrl = card.card_faces[0].image_uris.normal;
+                }
+
+                if (!imgUrl) return;
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'card-wrapper';
+                wrapper.title = "Cliquez pour lire les détails";
+                
+                const img = document.createElement('img');
+                img.className = 'card-image';
+                img.src = imgUrl;
+                img.alt = card.name;
+                img.loading = 'lazy'; 
+                
+                wrapper.appendChild(img);
+                
+                if (item.qty > 1) {
+                    const badge = document.createElement('div');
+                    badge.className = 'quantity-badge';
+                    badge.textContent = item.qty;
+                    wrapper.appendChild(badge);
+                }
+                
+                wrapper.addEventListener('click', () => openModal(card));
+                galleryEl.appendChild(wrapper);
+            });
+        }
+
+        // Formate visuellement les coûts de mana {R}, {U}, etc. pour le rendre plus ergonomique
+        function formatOracleText(text) {
+            if (!text) return '';
+            let formatted = text.replace(/\n/g, '<br><br>');
+            formatted = formatted.replace(/\{([^}]+)\}/g, '<span class="mana-symbol">$1</span>');
+            return formatted;
+        }
+
+        function openModal(card) {
+            modalLeft.innerHTML = '';
+            modalRight.innerHTML = '';
+            
+            // Normalisation pour les cartes rectos/versos
+            const faces = card.card_faces && !card.image_uris ? card.card_faces : [card];
+            
+            faces.forEach((face, index) => {
+                // Images
+                if (face.image_uris && face.image_uris.normal) {
+                    const img = document.createElement('img');
+                    img.src = face.image_uris.normal;
+                    modalLeft.appendChild(img);
+                }
+
+                // Textes
+                const block = document.createElement('div');
+                block.className = 'card-details-block';
+
+                let manaHtml = face.mana_cost ? formatOracleText(face.mana_cost) : '';
+                
+                block.innerHTML = `
+                    <h2 class="card-title">
+                        <span>${face.name}</span>
+                        <span>${manaHtml}</span>
+                    </h2>
+                    <div class="card-type">${face.type_line}</div>
+                `;
+                
+                if (face.oracle_text) {
+                    const oracle = document.createElement('div');
+                    oracle.className = 'card-oracle';
+                    oracle.innerHTML = formatOracleText(face.oracle_text);
+                    block.appendChild(oracle);
+                }
+                
+                if (face.flavor_text) {
+                    const flavor = document.createElement('div');
+                    flavor.className = 'card-flavor';
+                    flavor.textContent = face.flavor_text;
+                    block.appendChild(flavor);
+                }
+                
+                modalRight.appendChild(block);
+            });
+            
+            modalOverlay.classList.add('open');
+        }
+
+        function closeModal() {
+            modalOverlay.classList.remove('open');
+        }
+    </script>
+</body>
+</html>
